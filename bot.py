@@ -1,4 +1,4 @@
-# AETHORIA BOT — Code Complet
+# AETHORIA BOT — Code Complet Fixé
 # Salons Permanents "Royaumes" + Dashboard Dynamic + Tickets + Histoire Infinie (+ Top) + Top Voc + Help + Tournoi Invitations (24h)
 
 import asyncio
@@ -35,7 +35,7 @@ def start_web_server():
     print(f"🌐 Serveur web lancé sur le port {port}")
     server.serve_forever()
 
-threading.Thread(start_web_server, daemon=True).start()
+threading.Thread(target=start_web_server, daemon=True).start()
 
 # ============================================================
 # CONFIGURATION GÉNÉRALE
@@ -103,7 +103,7 @@ def donnees_par_defaut():
         "temps_vocal": {},
         "tournoi_invites": {
             "actif": False,
-            "invitateurs": {},  # { "inviter_id": {"validees": 0, "en_attente": [ {"member_id": 123, "rejoint_le": timestamp} ] } }
+            "invitateurs": {},
         }
     }
 
@@ -119,7 +119,6 @@ def charger_donnees():
         for cle, valeur in defaut.items():
             donnees_chargees.setdefault(cle, valeur)
 
-        # Rétrocompatibilité Histoire Infinie
         jeu = donnees_chargees.setdefault("jeu_histoire", {})
         jeu.setdefault("participations", {})
 
@@ -174,7 +173,6 @@ async def mettre_a_jour_cache_invitations(guild):
 
 @tasks.loop(minutes=5)
 async def verifier_invitations_en_attente():
-    """Vérifie toutes les 5 minutes si des personnes invitées ont dépassé les 24h sur le serveur."""
     tournoi = donnees.get("tournoi_invites", {})
     if not tournoi.get("actif"):
         return
@@ -251,7 +249,7 @@ async def liste_commandes(interaction: discord.Interaction):
             "• `/top_voc` : Classement des membres les plus actifs en vocal.\n"
             "• `/top_histoire` : Classement des contributeurs de l'histoire infinie.\n"
             "• `/invites` : Voir ton nombre d'invitations (validées & en attente).\n"
-            "• `/tournoi` : Afficher le classement du tournoi d'invitations actif."
+            "• `/tournoi classement` : Afficher le classement du tournoi d'invitations."
         ),
         inline=False,
     )
@@ -320,7 +318,7 @@ async def top_histoire(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 # ============================================================
-# SYSTÈME DE TOURNOI D'INVITATIONS (/tournoi)
+# SYSTÈME DE TOURNOI D'INVITATIONS (/tournoi & /invites)
 # ============================================================
 
 groupe_tournoi = app_commands.Group(name="tournoi", description="Gestion et affichage du tournoi d'invitations")
@@ -426,8 +424,28 @@ async def tournoi_classement(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-# Ajout unique du groupe dans l'arbre des commandes
 tree.add_command(groupe_tournoi)
+
+@tree.command(name="invites", description="Consulter tes statistiques d'invitations")
+@app_commands.describe(joueur="Consulter les invitations d'un autre joueur (optionnel)")
+async def consulter_invites(interaction: discord.Interaction, joueur: discord.Member = None):
+    cible = joueur or interaction.user
+    tournoi = donnees.get("tournoi_invites", {})
+    invitateurs = tournoi.get("invitateurs", {})
+
+    data = invitateurs.get(str(cible.id), {"validees": 0, "en_attente": []})
+
+    validees = data.get("validees", 0)
+    en_attente = len(data.get("en_attente", []))
+
+    embed = discord.Embed(
+        title=f"📩 Invitations de {cible.display_name}",
+        color=0x3498DB
+    )
+    embed.add_field(name="✅ Invitations validées (24h+)", value=f"**{validees}**", inline=True)
+    embed.add_field(name="⏳ En attente de validation", value=f"**{en_attente}**", inline=True)
+
+    await interaction.response.send_message(embed=embed)
 
 # ============================================================
 # TABLEAU DE BORD DYNAMIQUE
@@ -554,7 +572,6 @@ async def on_member_join(member):
     stats["semaine_plus"] = stats.get("semaine_plus", 0) + 1
     sauvegarder()
 
-    # Détection de l'invitateur si le tournoi est actif
     tournoi = donnees.get("tournoi_invites", {})
     if tournoi.get("actif"):
         guild = member.guild
@@ -595,7 +612,6 @@ async def on_member_remove(member):
     stats["aujourdhui_moins"] = stats.get("aujourdhui_moins", 0) + 1
     stats["semaine_moins"] = stats.get("semaine_moins", 0) + 1
 
-    # Nettoyage si le joueur en attente quitte le serveur avant 24h
     tournoi = donnees.get("tournoi_invites", {})
     if tournoi.get("actif"):
         invitateurs = tournoi.get("invitateurs", {})
@@ -1210,7 +1226,6 @@ async def on_message(message):
                 pass
             return
 
-        # Enregistrement des mots et comptage pour le classement
         jeu["mots"].extend(mots_msg)
         jeu["dernier_joueur_id"] = message.author.id
 
