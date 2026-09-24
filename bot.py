@@ -320,7 +320,7 @@ async def top_histoire(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 # ============================================================
-# SYSTÈME DE TOURNOI D'INVITATIONS (/tournoi & /invites)
+# SYSTÈME DE TOURNOI D'INVITATIONS (/tournoi)
 # ============================================================
 
 groupe_tournoi = app_commands.Group(name="tournoi", description="Gestion et affichage du tournoi d'invitations")
@@ -365,7 +365,7 @@ async def tournoi_stop(interaction: discord.Interaction):
 
     embed = discord.Embed(
         title="🛑 Fin du Tournoi d'Invitations",
-        description="Le tournoi est désormais terminé ! Utilisez `/tournoi` pour afficher les résultats globaux.",
+        description="Le tournoi est désormais terminé ! Utilisez `/tournoi classement` pour afficher les résultats globaux.",
         color=0xE74C3C
     )
     await interaction.response.send_message(embed=embed)
@@ -391,7 +391,7 @@ async def tournoi_statut(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@tree.command(name="tournoi", description="Afficher le classement des 10 meilleurs invitateurs")
+@groupe_tournoi.command(name="classement", description="Afficher le classement des 10 meilleurs invitateurs")
 async def tournoi_classement(interaction: discord.Interaction):
     tournoi = donnees.get("tournoi_invites", {})
     invitateurs = tournoi.get("invitateurs", {})
@@ -400,7 +400,6 @@ async def tournoi_classement(interaction: discord.Interaction):
         await interaction.response.send_message("📊 Aucune invitation n'a encore été enregistrée pour le tournoi.", ephemeral=True)
         return
 
-    # Tri par nombre de validées, puis en attente
     trie = sorted(
         invitateurs.items(),
         key=lambda x: (x[1].get("validees", 0), len(x[1].get("en_attente", []))),
@@ -427,28 +426,8 @@ async def tournoi_classement(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+# Ajout unique du groupe dans l'arbre des commandes
 tree.add_command(groupe_tournoi)
-
-@tree.command(name="invites", description="Consulter tes statistiques d'invitations")
-@app_commands.describe(joueur="Consulter les invitations d'un autre joueur (optionnel)")
-async def consulter_invites(interaction: discord.Interaction, joueur: discord.Member = None):
-    cible = joueur or interaction.user
-    tournoi = donnees.get("tournoi_invites", {})
-    invitateurs = tournoi.get("invitateurs", {})
-
-    data = invitateurs.get(str(cible.id), {"validees": 0, "en_attente": []})
-
-    validees = data.get("validees", 0)
-    en_attente = len(data.get("en_attente", []))
-
-    embed = discord.Embed(
-        title=f"📩 Invitations de {cible.display_name}",
-        color=0x3498DB
-    )
-    embed.add_field(name="✅ Invitations validées (24h+)", value=f"**{validees}**", inline=True)
-    embed.add_field(name="⏳ En attente de validation", value=f"**{en_attente}**", inline=True)
-
-    await interaction.response.send_message(embed=embed)
 
 # ============================================================
 # TABLEAU DE BORD DYNAMIQUE
