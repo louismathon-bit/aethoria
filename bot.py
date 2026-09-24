@@ -752,10 +752,10 @@ groupe_salon = app_commands.Group(name="salon", description="Gestion des Royaume
 @groupe_salon.command(name="créer", description="Créer ton Royaume (salons vocal et textuel)")
 @app_commands.describe(nom="Le nom de ton Royaume")
 async def salon_creer(interaction: discord.Interaction, nom: str):
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     membre = interaction.user
-
-    await interaction.response.defer(ephemeral=True)
 
     categorie = await obtenir_ou_creer_categorie_royaume(guild)
     nom_clean = nom.lower().replace(" ", "-")
@@ -795,6 +795,8 @@ async def salon_creer(interaction: discord.Interaction, nom: str):
 
 @groupe_salon.command(name="supprimer", description="Dissoudre définitivement ton Royaume")
 async def salon_supprimer(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     membre = interaction.user
 
@@ -802,10 +804,8 @@ async def salon_supprimer(interaction: discord.Interaction):
     salons_a_supprimer = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_a_supprimer:
-        await interaction.response.send_message("❌ Tu ne possèdes aucun salon à supprimer dans la catégorie des Royaumes.", ephemeral=True)
+        await interaction.followup.send("❌ Tu ne possèdes aucun salon à supprimer dans la catégorie des Royaumes.", ephemeral=True)
         return
-
-    await interaction.response.send_message("🗑️ Dissolution de ton Royaume en cours...", ephemeral=True)
 
     for chan in salons_a_supprimer:
         try:
@@ -813,11 +813,15 @@ async def salon_supprimer(interaction: discord.Interaction):
         except Exception as e:
             print(f"Erreur lors de la suppression du salon {chan.name}: {e}")
 
+    await interaction.followup.send("🗑️ Ton Royaume a été dissous avec succès.", ephemeral=True)
+
 groupe_ajouter_salon = app_commands.Group(name="ajouter", description="Accorder des accès à ton Royaume")
 
 @groupe_ajouter_salon.command(name="joueur", description="Accorder l'accès à ton Royaume à un membre")
 @app_commands.describe(joueur="Le membre à inviter dans ton Royaume")
 async def ajouter_joueur(interaction: discord.Interaction, joueur: discord.Member):
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     membre = interaction.user
 
@@ -825,7 +829,7 @@ async def ajouter_joueur(interaction: discord.Interaction, joueur: discord.Membe
     salons_perso = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_perso:
-        await interaction.response.send_message("❌ Tu ne possèdes aucun Royaume à gérer.", ephemeral=True)
+        await interaction.followup.send("❌ Tu ne possèdes aucun Royaume à gérer.", ephemeral=True)
         return
 
     for chan in salons_perso:
@@ -834,7 +838,7 @@ async def ajouter_joueur(interaction: discord.Interaction, joueur: discord.Membe
         elif isinstance(chan, discord.VoiceChannel):
             await chan.set_permissions(joueur, read_messages=True, connect=True, speak=True)
 
-    await interaction.response.send_message(f"✅ {joueur.mention} a maintenant accès à ton Royaume !", ephemeral=True)
+    await interaction.followup.send(f"✅ {joueur.mention} a maintenant accès à ton Royaume !", ephemeral=True)
 
 groupe_salon.add_command(groupe_ajouter_salon)
 
@@ -843,6 +847,8 @@ groupe_retirer_salon = app_commands.Group(name="retirer", description="Retirer d
 @groupe_retirer_salon.command(name="joueur", description="Retirer l'accès à ton Royaume à un membre")
 @app_commands.describe(joueur="Le membre à bannir de ton Royaume")
 async def retirer_joueur(interaction: discord.Interaction, joueur: discord.Member):
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     membre = interaction.user
 
@@ -850,7 +856,7 @@ async def retirer_joueur(interaction: discord.Interaction, joueur: discord.Membe
     salons_perso = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_perso:
-        await interaction.response.send_message("❌ Tu ne possèdes aucun Royaume à gérer.", ephemeral=True)
+        await interaction.followup.send("❌ Tu ne possèdes aucun Royaume à gérer.", ephemeral=True)
         return
 
     for chan in salons_perso:
@@ -858,7 +864,7 @@ async def retirer_joueur(interaction: discord.Interaction, joueur: discord.Membe
         if isinstance(chan, discord.VoiceChannel) and joueur.voice and joueur.voice.channel == chan:
             await joueur.move_to(None)
 
-    await interaction.response.send_message(f"🚫 {joueur.mention} n'a plus accès à ton Royaume.", ephemeral=True)
+    await interaction.followup.send(f"🚫 {joueur.mention} n'a plus accès à ton Royaume.", ephemeral=True)
 
 groupe_salon.add_command(groupe_retirer_salon)
 tree.add_command(groupe_salon)
