@@ -1,5 +1,5 @@
-# AETHORIA BOT — Code Complet Correctement Ajusté
-# Salons Permanents "Royaumes" (/salon) + Dashboard Dynamic + Tickets + Histoire Infinie + Top Voc + Help + Staff Setup
+# AETHORIA BOT — Code Complet
+# Salons Permanents "Royaumes" + Dashboard Dynamic + Tickets + Histoire Infinie (+ Top) + Top Voc + Help + Tournoi Invitations (24h)
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -35,7 +35,7 @@ def start_web_server():
     print(f"🌐 Serveur web lancé sur le port {port}")
     server.serve_forever()
 
-threading.Thread(target=start_web_server, daemon=True).start()
+threading.Thread(start_web_server, daemon=True).start()
 
 # ============================================================
 # CONFIGURATION GÉNÉRALE
@@ -59,8 +59,9 @@ LIMITE_MOTS = 30
 SERVER_IP_JAVA = "aethoria.omgcraft.fr"
 SERVER_IP_BEDROCK = "Aethoria.aternos.me"
 
-# Dictionnaire temporaire pour calculer le temps vocal
+# Dictionnaires temporaires
 vocal_sessions = {}
+cache_invitations = {}  # Pour comparer le nombre d'utilisations des liens
 
 # ============================================================
 # INTENTS & INITIALISATION
@@ -70,6 +71,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.voice_states = True
+intents.invites = True
 
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
@@ -80,7 +82,11 @@ tree = app_commands.CommandTree(bot)
 
 def donnees_par_defaut():
     return {
-        "jeu_histoire": {"mots": [], "dernier_joueur_id": None},
+        "jeu_histoire": {
+            "mots": [],
+            "dernier_joueur_id": None,
+            "participations": {}
+        },
         "tickets_config": {
             "channel_logs_id": None,
             "tickets_actifs": {},
@@ -95,6 +101,10 @@ def donnees_par_defaut():
             "historique_7j": {},
         },
         "temps_vocal": {},
+        "tournoi_invites": {
+            "actif": False,
+            "invitateurs": {},  # { "inviter_id": {"validees": 0, "en_attente": [ {"member_id": 123, "rejoint_le": timestamp} ] } }
+        }
     }
 
 def charger_donnees():
@@ -108,6 +118,10 @@ def charger_donnees():
         defaut = donnees_par_defaut()
         for cle, valeur in defaut.items():
             donnees_chargees.setdefault(cle, valeur)
+
+        # Rétrocompatibilité Histoire Infinie
+        jeu = donnees_chargees.setdefault("jeu_histoire", {})
+        jeu.setdefault("participations", {})
 
         return donnees_chargees
     except Exception as erreur:
@@ -126,7 +140,6 @@ def sauvegarder():
         print(f"❌ Erreur sauvegarde : {erreur}")
 
 def est_staff(interaction: discord.Interaction):
-    """Vérifie si le joueur est un Staff Bot (Rôle Modérateur, Admin ou Admin du serveur)"""
     roles_ids = [r.id for r in interaction.user.roles]
     return (
         interaction.user.guild_permissions.administrator
@@ -147,6 +160,47 @@ async def envoyer_log_ticket(guild, embed):
             await log_channel.send(embed=embed)
         except Exception as e:
             print(f"❌ Erreur envoi log ticket : {e}")
+
+# ============================================================
+# SUIVI DES INVITATIONS & TÂCHE DE VALIDATION (24H)
+# ============================================================
+
+async def mettre_a_jour_cache_invitations(guild):
+    try:
+        invites = await guild.invites()
+        cache_invitations[guild.id] = {invite.code: (invite.uses, invite.inviter.id if invite.inviter else None) for invite in invites}
+    except Exception as e:
+        print(f"⚠️ Impossible de lire les invitations : {e}")
+
+@tasks.loop(minutes=5)
+async def verifier_invitations_en_attente():
+    """Vérifie toutes les 5 minutes si des personnes invitées ont dépassé les 24h sur le serveur."""
+    tournoi = donnees.get("tournoi_invites", {})
+    if not tournoi.get("actif"):
+        return
+
+    maintenant = datetime.now(timezone.utc).timestamp()
+    delai_24h = 24 * 3600
+    modifications = False
+
+    invitateurs = tournoi.setdefault("invitateurs", {})
+
+    for inviter_id, data in invitateurs.items():
+        en_attente = data.get("en_attente", [])
+        nouveau_en_attente = []
+
+        for item in en_attente:
+            rejoint_le = item.get("rejoint_le", maintenant)
+            if maintenant - rejoint_le >= delai_24h:
+                data["validees"] = data.get("validees", 0) + 1
+                modifications = True
+            else:
+                nouveau_en_attente.append(item)
+
+        data["en_attente"] = nouveau_en_attente
+
+    if modifications:
+        sauvegarder()
 
 # ============================================================
 # SYSTÈME DE SUIVI VOCAL (TOP VOC)
@@ -171,7 +225,7 @@ async def on_voice_state_update(member, before, after):
             sauvegarder()
 
 # ============================================================
-# COMMANDES JOUEURS (HELP & TOP VOC)
+# COMMANDES JOUEURS (HELP, TOP VOC & TOP HISTOIRE)
 # ============================================================
 
 @tree.command(name="commandes", description="Afficher la liste de toutes les commandes du bot")
@@ -192,8 +246,13 @@ async def liste_commandes(interaction: discord.Interaction):
         inline=False,
     )
     embed.add_field(
-        name="📊 Statistiques & Classement",
-        value="• `/top_voc` : Afficher le classement des membres ayant passé le plus de temps en vocal.",
+        name="🏆 Classements & Tournois",
+        value=(
+            "• `/top_voc` : Classement des membres les plus actifs en vocal.\n"
+            "• `/top_histoire` : Classement des contributeurs de l'histoire infinie.\n"
+            "• `/invites` : Voir ton nombre d'invitations (validées & en attente).\n"
+            "• `/tournoi` : Afficher le classement du tournoi d'invitations actif."
+        ),
         inline=False,
     )
     embed.add_field(
@@ -210,10 +269,7 @@ async def top_voc(interaction: discord.Interaction):
     temps_voc = donnees.get("temps_vocal", {})
 
     if not temps_voc:
-        await interaction.response.send_message(
-            "📊 Aucune donnée vocale n'a encore été enregistrée.",
-            ephemeral=True,
-        )
+        await interaction.response.send_message("📊 Aucune donnée vocale n'a encore été enregistrée.", ephemeral=True)
         return
 
     trie = sorted(temps_voc.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -226,9 +282,7 @@ async def top_voc(interaction: discord.Interaction):
         heures = secondes // 3600
         minutes = (secondes % 3600) // 60
 
-        description_lignes.append(
-            f"{puce} <@{user_id}> — **{heures}h {minutes}min**"
-        )
+        description_lignes.append(f"{puce} <@{user_id}> — **{heures}h {minutes}min**")
 
     embed = discord.Embed(
         title="🎙️ Top 10 — Membres les plus actifs en Vocal",
@@ -236,6 +290,163 @@ async def top_voc(interaction: discord.Interaction):
         color=0xF1C40F,
         timestamp=datetime.now(timezone.utc),
     )
+
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="top_histoire", description="Afficher le classement des participants de l'Histoire Infinie")
+async def top_histoire(interaction: discord.Interaction):
+    participations = donnees.get("jeu_histoire", {}).get("participations", {})
+
+    if not participations:
+        await interaction.response.send_message("📖 Aucune participation enregistrée pour l'Histoire Infinie.", ephemeral=True)
+        return
+
+    trie = sorted(participations.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    description_lignes = []
+    medailles = ["🥇", "🥈", "🥉"]
+
+    for i, (user_id, mots_comptes) in enumerate(trie):
+        puce = medailles[i] if i < 3 else f"`#{i+1}`"
+        description_lignes.append(f"{puce} <@{user_id}> — **{mots_comptes} mot(s) ajouté(s)**")
+
+    embed = discord.Embed(
+        title="📖 Top 10 — Histoire Infinie",
+        description="\n".join(description_lignes),
+        color=0x9B59B6,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+# ============================================================
+# SYSTÈME DE TOURNOI D'INVITATIONS (/tournoi & /invites)
+# ============================================================
+
+groupe_tournoi = app_commands.Group(name="tournoi", description="Gestion et affichage du tournoi d'invitations")
+
+@groupe_tournoi.command(name="start", description="[STAFF] Lancer le tournoi d'invitations")
+async def tournoi_start(interaction: discord.Interaction):
+    if not est_staff(interaction):
+        await interaction.response.send_message("❌ Réservé à l'équipe Staff.", ephemeral=True)
+        return
+
+    tournoi = donnees.setdefault("tournoi_invites", {"actif": False, "invitateurs": {}})
+    if tournoi.get("actif"):
+        await interaction.response.send_message("⚠️ Le tournoi est déjà en cours !", ephemeral=True)
+        return
+
+    tournoi["actif"] = True
+    tournoi["invitateurs"] = {}
+    sauvegarder()
+
+    await mettre_a_jour_cache_invitations(interaction.guild)
+
+    embed = discord.Embed(
+        title="🎉 Lancement du Tournoi d'Invitations !",
+        description="Le tournoi vient de débuter. Invitez vos amis sur le serveur pour grimper dans le classement !\n\n⚠️ **Condition** : Les personnes invitées doivent rester au moins **24 heures** sur le serveur pour valider l'invitation.",
+        color=0x2ECC71
+    )
+    await interaction.response.send_message(embed=embed)
+
+@groupe_tournoi.command(name="stop", description="[STAFF] Arrêter le tournoi d'invitations")
+async def tournoi_stop(interaction: discord.Interaction):
+    if not est_staff(interaction):
+        await interaction.response.send_message("❌ Réservé à l'équipe Staff.", ephemeral=True)
+        return
+
+    tournoi = donnees.setdefault("tournoi_invites", {"actif": False, "invitateurs": {}})
+    if not tournoi.get("actif"):
+        await interaction.response.send_message("⚠️ Aucun tournoi n'est actuellement en cours.", ephemeral=True)
+        return
+
+    tournoi["actif"] = False
+    sauvegarder()
+
+    embed = discord.Embed(
+        title="🛑 Fin du Tournoi d'Invitations",
+        description="Le tournoi est désormais terminé ! Utilisez `/tournoi` pour afficher les résultats globaux.",
+        color=0xE74C3C
+    )
+    await interaction.response.send_message(embed=embed)
+
+@groupe_tournoi.command(name="statut", description="Afficher l'état actuel du tournoi")
+async def tournoi_statut(interaction: discord.Interaction):
+    tournoi = donnees.get("tournoi_invites", {})
+    actif = tournoi.get("actif", False)
+    invitateurs = tournoi.get("invitateurs", {})
+
+    total_validees = sum(data.get("validees", 0) for data in invitateurs.values())
+    total_en_attente = sum(len(data.get("en_attente", [])) for data in invitateurs.values())
+
+    statut_texte = "🟢 **En cours**" if actif else "🔴 **Arrêté**"
+
+    embed = discord.Embed(
+        title="📊 Statut du Tournoi d'Invitations",
+        color=0x3498DB
+    )
+    embed.add_field(name="État du Tournoi", value=statut_texte, inline=False)
+    embed.add_field(name="Total Validées (24h+)", value=f"**{total_validees}**", inline=True)
+    embed.add_field(name="Total En Attente", value=f"**{total_en_attente}**", inline=True)
+
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="tournoi", description="Afficher le classement des 10 meilleurs invitateurs")
+async def tournoi_classement(interaction: discord.Interaction):
+    tournoi = donnees.get("tournoi_invites", {})
+    invitateurs = tournoi.get("invitateurs", {})
+
+    if not invitateurs:
+        await interaction.response.send_message("📊 Aucune invitation n'a encore été enregistrée pour le tournoi.", ephemeral=True)
+        return
+
+    # Tri par nombre de validées, puis en attente
+    trie = sorted(
+        invitateurs.items(),
+        key=lambda x: (x[1].get("validees", 0), len(x[1].get("en_attente", []))),
+        reverse=True
+    )[:10]
+
+    description_lignes = []
+    medailles = ["🥇", "🥈", "🥉"]
+
+    for i, (user_id, data) in enumerate(trie):
+        puce = medailles[i] if i < 3 else f"`#{i+1}`"
+        validees = data.get("validees", 0)
+        en_attente = len(data.get("en_attente", []))
+
+        description_lignes.append(f"{puce} <@{user_id}> — **{validees}** validée(s) *({en_attente} en attente)*")
+
+    embed = discord.Embed(
+        title="🏆 Classement du Tournoi d'Invitations",
+        description="\n".join(description_lignes),
+        color=0xF1C40F,
+        timestamp=datetime.now(timezone.utc)
+    )
+    embed.set_footer(text="Seules les invitations validées après 24h comptent.")
+
+    await interaction.response.send_message(embed=embed)
+
+tree.add_command(groupe_tournoi)
+
+@tree.command(name="invites", description="Consulter tes statistiques d'invitations")
+@app_commands.describe(joueur="Consulter les invitations d'un autre joueur (optionnel)")
+async def consulter_invites(interaction: discord.Interaction, joueur: discord.Member = None):
+    cible = joueur or interaction.user
+    tournoi = donnees.get("tournoi_invites", {})
+    invitateurs = tournoi.get("invitateurs", {})
+
+    data = invitateurs.get(str(cible.id), {"validees": 0, "en_attente": []})
+
+    validees = data.get("validees", 0)
+    en_attente = len(data.get("en_attente", []))
+
+    embed = discord.Embed(
+        title=f"📩 Invitations de {cible.display_name}",
+        color=0x3498DB
+    )
+    embed.add_field(name="✅ Invitations validées (24h+)", value=f"**{validees}**", inline=True)
+    embed.add_field(name="⏳ En attente de validation", value=f"**{en_attente}**", inline=True)
 
     await interaction.response.send_message(embed=embed)
 
@@ -351,25 +562,77 @@ async def setup_tableau_de_bord(interaction: discord.Interaction):
     )
 
 # ============================================================
-# ÉVÉNEMENTS MEMBRES
+# ÉVÉNEMENTS MEMBRES (ARRIVÉES / DÉPARTS / INVITATIONS)
 # ============================================================
 
 @bot.event
 async def on_member_join(member):
     if member.bot:
         return
+
     stats = donnees.setdefault("statistiques", {})
     stats["aujourdhui_plus"] = stats.get("aujourdhui_plus", 0) + 1
     stats["semaine_plus"] = stats.get("semaine_plus", 0) + 1
     sauvegarder()
 
+    # Détection de l'invitateur si le tournoi est actif
+    tournoi = donnees.get("tournoi_invites", {})
+    if tournoi.get("actif"):
+        guild = member.guild
+        invites_avant = cache_invitations.get(guild.id, {})
+
+        try:
+            invites_apres = await guild.invites()
+            inviter_id = None
+
+            for invite in invites_apres:
+                code = invite.code
+                utilisations_avant, owner_id = invites_avant.get(code, (0, None))
+
+                if invite.uses > utilisations_avant:
+                    inviter_id = invite.inviter.id if invite.inviter else owner_id
+                    break
+
+            await mettre_a_jour_cache_invitations(guild)
+
+            if inviter_id and inviter_id != member.id:
+                invitateurs = tournoi.setdefault("invitateurs", {})
+                data_inviter = invitateurs.setdefault(str(inviter_id), {"validees": 0, "en_attente": []})
+
+                data_inviter["en_attente"].append({
+                    "member_id": member.id,
+                    "rejoint_le": datetime.now(timezone.utc).timestamp()
+                })
+                sauvegarder()
+        except Exception as e:
+            print(f"Erreur détection invitation : {e}")
+
 @bot.event
 async def on_member_remove(member):
     if member.bot:
         return
+
     stats = donnees.setdefault("statistiques", {})
     stats["aujourdhui_moins"] = stats.get("aujourdhui_moins", 0) + 1
     stats["semaine_moins"] = stats.get("semaine_moins", 0) + 1
+
+    # Nettoyage si le joueur en attente quitte le serveur avant 24h
+    tournoi = donnees.get("tournoi_invites", {})
+    if tournoi.get("actif"):
+        invitateurs = tournoi.get("invitateurs", {})
+        modifications = False
+
+        for inviter_id, data in invitateurs.items():
+            en_attente = data.get("en_attente", [])
+            nouveau_attente = [item for item in en_attente if item.get("member_id") != member.id]
+
+            if len(nouveau_attente) != len(en_attente):
+                data["en_attente"] = nouveau_attente
+                modifications = True
+
+        if modifications:
+            sauvegarder()
+
     sauvegarder()
 
 # ============================================================
@@ -741,7 +1004,6 @@ async def setup_panneau_tickets(interaction: discord.Interaction):
 # ============================================================
 
 async def obtenir_ou_creer_categorie_royaume(guild: discord.Guild) -> discord.CategoryChannel:
-    """Récupère la catégorie des Royaumes ou la crée dynamiquement si elle n'existe pas."""
     categorie = discord.utils.find(
         lambda c: NOM_CATEGORIE_ROYAUME.lower() in c.name.lower() or "royaume" in c.name.lower(),
         guild.categories
@@ -937,7 +1199,7 @@ async def on_message(message):
         return
 
     if message.channel.id == CHANNEL_JEU_ID:
-        jeu = donnees.setdefault("jeu_histoire", {"mots": [], "dernier_joueur_id": None})
+        jeu = donnees.setdefault("jeu_histoire", {"mots": [], "dernier_joueur_id": None, "participations": {}})
 
         if jeu.get("dernier_joueur_id") == message.author.id:
             try:
@@ -969,8 +1231,14 @@ async def on_message(message):
                 pass
             return
 
+        # Enregistrement des mots et comptage pour le classement
         jeu["mots"].extend(mots_msg)
         jeu["dernier_joueur_id"] = message.author.id
+
+        participations = jeu.setdefault("participations", {})
+        user_id_str = str(message.author.id)
+        participations[user_id_str] = participations.get(user_id_str, 0) + len(mots_msg)
+
         sauvegarder()
 
         try:
@@ -988,6 +1256,12 @@ async def on_ready():
 
     if not update_tableau_de_board.is_running():
         update_tableau_de_board.start()
+
+    if not verifier_invitations_en_attente.is_running():
+        verifier_invitations_en_attente.start()
+
+    for guild in bot.guilds:
+        await mettre_a_jour_cache_invitations(guild)
 
     try:
         synced = await tree.sync()
