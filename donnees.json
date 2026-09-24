@@ -1,0 +1,40 @@
+{
+    "jeu_histoire": {
+        "mots": [
+            "<:720020minecraftheart:1534868338201727067>",
+            "aripodefleur",
+            "non",
+            "XD",
+            "Haha",
+            "T-même"
+        ],
+        "dernier_joueur_id": 1278454968138989604
+    },
+    "tickets_config": {
+        "channel_logs_id": 1542508678823944292,
+        "tickets_actifs": {
+            "1552577594098982932": {
+                "owner_id": 1484810426490556471,
+                "type": "autre",
+                "ouvert_a": "2026-09-24T07:09:04.170990+00:00"
+            }
+        }
+    },
+    "tableau_bord": {
+        "channel_id": 1539021962712719420,
+        "message_id": 1551303845311938571
+    },
+    "statistiques": {
+        "aujourdhui_plus": 6,
+        "aujourdhui_moins": 6,
+        "semaine_plus": 6,
+        "semaine_moins": 6,
+        "record_membres": 333,
+        "historique_7j": {
+            "09-20": 329,
+            "09-21": 332,
+            "09-22": 332,
+            "09-23": 332
+        }
+    }
+}
