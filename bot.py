@@ -752,7 +752,11 @@ groupe_salon = app_commands.Group(name="salon", description="Gestion des Royaume
 @groupe_salon.command(name="créer", description="Créer ton Royaume (salons vocal et textuel)")
 @app_commands.describe(nom="Le nom de ton Royaume")
 async def salon_creer(interaction: discord.Interaction, nom: str):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+    except (discord.NotFound, discord.HTTPException):
+        pass
 
     guild = interaction.guild
     membre = interaction.user
@@ -795,7 +799,11 @@ async def salon_creer(interaction: discord.Interaction, nom: str):
 
 @groupe_salon.command(name="supprimer", description="Dissoudre définitivement ton Royaume")
 async def salon_supprimer(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+    except (discord.NotFound, discord.HTTPException):
+        pass
 
     guild = interaction.guild
     membre = interaction.user
@@ -820,7 +828,11 @@ groupe_ajouter_salon = app_commands.Group(name="ajouter", description="Accorder 
 @groupe_ajouter_salon.command(name="joueur", description="Accorder l'accès à ton Royaume à un membre")
 @app_commands.describe(joueur="Le membre à inviter dans ton Royaume")
 async def ajouter_joueur(interaction: discord.Interaction, joueur: discord.Member):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+    except (discord.NotFound, discord.HTTPException):
+        pass
 
     guild = interaction.guild
     membre = interaction.user
@@ -847,7 +859,11 @@ groupe_retirer_salon = app_commands.Group(name="retirer", description="Retirer d
 @groupe_retirer_salon.command(name="joueur", description="Retirer l'accès à ton Royaume à un membre")
 @app_commands.describe(joueur="Le membre à bannir de ton Royaume")
 async def retirer_joueur(interaction: discord.Interaction, joueur: discord.Member):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+    except (discord.NotFound, discord.HTTPException):
+        pass
 
     guild = interaction.guild
     membre = interaction.user
