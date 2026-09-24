@@ -741,11 +741,21 @@ async def setup_panneau_tickets(interaction: discord.Interaction):
 # ============================================================
 
 async def obtenir_ou_creer_categorie_royaume(guild: discord.Guild) -> discord.CategoryChannel:
-    """Récupère la catégorie ROYAUMES ou la crée dynamiquement si elle n'existe pas."""
-    for cat in guild.categories:
-        if "ROYAUME" in cat.name.upper():
-            return cat
-    return await guild.create_category(NOM_CATEGORIE_ROYAUME)
+    """Récupère la catégorie des Royaumes ou la crée dynamiquement si elle n'existe pas."""
+    categorie = discord.utils.find(
+        lambda c: NOM_CATEGORIE_ROYAUME.lower() in c.name.lower() or "royaume" in c.name.lower(),
+        guild.categories
+    )
+    
+    if categorie is not None:
+        return categorie
+
+    try:
+        categorie = await guild.create_category(NOM_CATEGORIE_ROYAUME)
+        return categorie
+    except discord.Forbidden:
+        print("❌ Erreur : Le bot ne possède pas la permission 'Gérer les canaux' pour créer la catégorie.")
+        raise
 
 groupe_salon = app_commands.Group(name="salon", description="Gestion des Royaumes permanents des membres")
 
@@ -761,7 +771,15 @@ async def salon_creer(interaction: discord.Interaction, nom: str):
     guild = interaction.guild
     membre = interaction.user
 
-    categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    try:
+        categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Le bot n'a pas la permission de gérer les canaux/catégories sur ce serveur.",
+            ephemeral=True
+        )
+        return
+
     nom_clean = nom.lower().replace(" ", "-")
 
     salon_existant = discord.utils.get(categorie.channels, name=f"💬-{nom_clean}")
@@ -808,7 +826,15 @@ async def salon_supprimer(interaction: discord.Interaction):
     guild = interaction.guild
     membre = interaction.user
 
-    categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    try:
+        categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Le bot n'a pas la permission de gérer les canaux/catégories sur ce serveur.",
+            ephemeral=True
+        )
+        return
+
     salons_a_supprimer = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_a_supprimer:
@@ -837,7 +863,15 @@ async def ajouter_joueur(interaction: discord.Interaction, joueur: discord.Membe
     guild = interaction.guild
     membre = interaction.user
 
-    categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    try:
+        categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Le bot n'a pas la permission de gérer les canaux/catégories sur ce serveur.",
+            ephemeral=True
+        )
+        return
+
     salons_perso = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_perso:
@@ -868,7 +902,15 @@ async def retirer_joueur(interaction: discord.Interaction, joueur: discord.Membe
     guild = interaction.guild
     membre = interaction.user
 
-    categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    try:
+        categorie = await obtenir_ou_creer_categorie_royaume(guild)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ Le bot n'a pas la permission de gérer les canaux/catégories sur ce serveur.",
+            ephemeral=True
+        )
+        return
+
     salons_perso = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_perso:
