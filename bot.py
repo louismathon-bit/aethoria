@@ -1,4 +1,4 @@
-# AETHORIA BOT — Code Complet Mis à Jour
+# AETHORIA BOT — Code Complet Correctement Ajusté
 # Salons Permanents "Royaumes" (/salon) + Dashboard Dynamic + Tickets + Histoire Infinie + Top Voc + Help + Staff Setup
 
 import asyncio
@@ -135,7 +135,6 @@ def est_staff(interaction: discord.Interaction):
     )
 
 def peut_gerer(interaction: discord.Interaction):
-    """Restriction stricte : Seuls les Staffs du Bot peuvent faire les commandes setup"""
     return est_staff(interaction)
 
 async def envoyer_log_ticket(guild, embed):
@@ -742,11 +741,11 @@ async def setup_panneau_tickets(interaction: discord.Interaction):
 # ============================================================
 
 async def obtenir_ou_creer_categorie_royaume(guild: discord.Guild) -> discord.CategoryChannel:
-    """Récupère la catégorie ROYAUMES ou la crée si elle n'existe pas."""
-    categorie = discord.utils.get(guild.categories, name=NOM_CATEGORIE_ROYAUME)
-    if not categorie:
-        categorie = await guild.create_category(NOM_CATEGORIE_ROYAUME)
-    return categorie
+    """Récupère la catégorie ROYAUMES ou la crée dynamiquement si elle n'existe pas."""
+    for cat in guild.categories:
+        if "ROYAUME" in cat.name.upper():
+            return cat
+    return await guild.create_category(NOM_CATEGORIE_ROYAUME)
 
 groupe_salon = app_commands.Group(name="salon", description="Gestion des Royaumes permanents des membres")
 
@@ -799,11 +798,7 @@ async def salon_supprimer(interaction: discord.Interaction):
     guild = interaction.guild
     membre = interaction.user
 
-    categorie = discord.utils.get(guild.categories, name=NOM_CATEGORIE_ROYAUME)
-    if not categorie:
-        await interaction.response.send_message("❌ Tu n'as aucun Royaume actif à dissoudre.", ephemeral=True)
-        return
-
+    categorie = await obtenir_ou_creer_categorie_royaume(guild)
     salons_a_supprimer = [chan for chan in categorie.channels if chan.permissions_for(membre).manage_channels]
 
     if not salons_a_supprimer:
